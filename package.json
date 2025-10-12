@@ -1,0 +1,53 @@
+{
+  "name": "excelgenerator-webresource",
+  "version": "1.0.0",
+  "description": "Excel Generator Web Resource for Power Apps - Can be converted to PCF",
+  "private": true,
+  "scripts": {
+    "start": "craco start",
+    "build": "craco build",
+    "test": "craco test",
+    "build:webresource": "npm run build && node scripts/build-webresource.js",
+    "eject": "react-scripts eject"
+  },
+  "dependencies": {
+    "@fluentui/react-components": "^9.47.0",
+    "@fluentui/react-hooks": "^8.7.5",
+    "@fluentui/react-icons": "^2.0.230",
+    "exceljs": "^4.4.0",
+    "file-saver": "^2.0.5",
+    "react": "^18.2.0",
+    "react-dnd": "^16.0.1",
+    "react-dnd-html5-backend": "^16.0.1",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.8.0",
+    "reactflow": "^11.11.4"
+  },
+  "devDependencies": {
+    "@craco/craco": "^7.1.0",
+    "@types/file-saver": "^2.0.7",
+    "@types/node": "^16.18.0",
+    "@types/react": "^18.0.28",
+    "@types/react-dom": "^18.0.11",
+    "ajv": "^8.12.0",
+    "react-scripts": "5.0.1",
+    "typescript": "^4.9.5"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
