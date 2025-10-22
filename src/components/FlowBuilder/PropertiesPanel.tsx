@@ -26,14 +26,22 @@ import {
 } from '@fluentui/react-icons';
 import { DUMMY_METADATA } from '../../data/dummyData';
 import { FlowNodeData } from '../../types/flowTypes';
+import { EntitySummary } from '../../services/metadataService';
 import { useLoading } from '../../contexts/LoadingContext';
 
 interface PropertiesPanelProps {
   node: Node | null;
   onUpdate: (nodeId: string, data: Partial<FlowNodeData>) => void;
+  availableEntities?: EntitySummary[];
+  isLoadingEntities?: boolean;
 }
 
-export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, onUpdate }) => {
+export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ 
+  node, 
+  onUpdate, 
+  availableEntities = [], 
+  isLoadingEntities = false 
+}) => {
   const { showLoading, hideLoading } = useLoading();
 
   // Helper function to delay execution
@@ -94,25 +102,39 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, onUpdate
     const selectedEntity = node.data.entity ? DUMMY_METADATA.entities.find((e: any) => e.logicalName === node.data.entity) : null;
     const entityGraph = selectedEntity ? DUMMY_METADATA.graphs[selectedEntity.logicalName] : null;
 
+    // Use real entities if available, fallback to dummy data
+    const entitiesToShow = availableEntities.length > 0 ? availableEntities : DUMMY_METADATA.entities;
+
     return (
       <>
         <div className="n8n-form-section">
           <Label className="n8n-form-label">Entity Selection</Label>
           <Dropdown
-            placeholder="Select entity"
+            placeholder={isLoadingEntities ? "Loading entities..." : "Select entity"}
             value={node.data.entity || ''}
+            disabled={isLoadingEntities}
             onOptionSelect={(_, data) => {
               const entityName = data.optionValue as string;
               handleEntitySelection(entityName);
             }}
             className="n8n-form-control"
           >
-            {DUMMY_METADATA.entities.map((entity: any) => (
-              <Option key={entity.logicalName} value={entity.logicalName} text={`${entity.displayName} (${entity.logicalName})`}>
+            {entitiesToShow.map((entity: any) => (
+              <Option 
+                key={entity.logicalName} 
+                value={entity.logicalName} 
+                text={`${entity.displayName} (${entity.logicalName})`}
+              >
                 {entity.displayName} ({entity.logicalName})
+                {entity.isCustom && <Badge size="small" color="brand" style={{ marginLeft: '8px' }}>Custom</Badge>}
               </Option>
             ))}
           </Dropdown>
+          {availableEntities.length > 0 && (
+            <div style={{ fontSize: '12px', color: 'var(--colorNeutralForeground2)', marginTop: '4px' }}>
+              {availableEntities.length} entities loaded from Power Apps
+            </div>
+          )}
         </div>
 
         {selectedEntity && entityGraph && (

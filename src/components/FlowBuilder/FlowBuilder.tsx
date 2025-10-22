@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ReactFlow, {
   Node,
   addEdge,
@@ -18,25 +18,107 @@ import 'reactflow/dist/style.css';
 import { CommandBar } from './CommandBar';
 import { NodePalette } from './NodePalette';
 import { PropertiesPanel } from './PropertiesPanel';
-import { PreviewPanel } from './PreviewPanel';
 import { HistoryPanel } from './HistoryPanel';
 import { FlowNode as CustomFlowNode } from './FlowNode';
 import { FlowGraph, PreviewData } from '../../types/flowTypes';
+import { ReportDefinition } from '../../types/reportTypes';
+import { ReportJsonConverter } from '../../services/reportJsonConverter';
+import { FlowToJsonConverter } from '../../services/flowToJsonConverter';
+import { ReportManager } from '../../services/reportManager';
+import { fetchEntities, EntitySummary, getEnvironmentInfo } from '../../services/metadataService';
 import { DUMMY_METADATA, DUMMY_RECORDS } from '../../data/dummyData';
 
 const nodeTypes = {
   default: CustomFlowNode,
 };
 
-export const FlowBuilder: React.FC = () => {
+interface FlowBuilderProps {
+  initialReport?: ReportDefinition;
+  onReportChange?: (report: ReportDefinition) => void;
+  onReportSave?: (report: ReportDefinition) => void;
+}
+
+export const FlowBuilder: React.FC<FlowBuilderProps> = ({ 
+  initialReport, 
+  onReportChange, 
+  onReportSave 
+}) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [previewData, setPreviewData] = useState<PreviewData>({ columns: [], rows: [] });
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [currentReport, setCurrentReport] = useState<ReportDefinition | null>(initialReport || null);
+  const [availableEntities, setAvailableEntities] = useState<EntitySummary[]>([]);
+  const [isLoadingEntities, setIsLoadingEntities] = useState(false);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
+
+  const syncFlowToJson = useCallback(() => {
+    if (!currentReport) return;
+    
+    try {
+      const updatedReport = FlowToJsonConverter.updateReportFromFlow(currentReport, nodes, edges);
+      setCurrentReport(updatedReport);
+      onReportChange?.(updatedReport);
+    } catch (error) {
+      console.error('Error syncing flow to JSON:', error);
+    }
+  }, [currentReport, nodes, edges, onReportChange]);
+
+  const loadReportToFlow = useCallback((report: ReportDefinition) => {
+    try {
+      const { nodes: reportNodes, edges: reportEdges } = ReportJsonConverter.jsonToFlow(report);
+      setNodes(reportNodes);
+      setEdges(reportEdges);
+      setCurrentReport(report);
+    } catch (error) {
+      console.error('Error loading report to flow:', error);
+    }
+  }, [setNodes, setEdges]);
+
+  const createNewReport = useCallback(() => {
+    const newReport = ReportManager.createNewReport('New Report', 'unknown');
+    setCurrentReport(newReport);
+    setNodes([]);
+    setEdges([]);
+  }, [setNodes, setEdges]);
+
+  // Load entities from Power Apps on component mount
+  useEffect(() => {
+    loadEntities();
+  }, []);
+
+  const loadEntities = async () => {
+    setIsLoadingEntities(true);
+    try {
+      console.log('Loading entities from Power Apps...', getEnvironmentInfo());
+      const entities = await fetchEntities();
+      setAvailableEntities(entities);
+      console.log(`Loaded ${entities.length} entities:`, entities.map(e => e.logicalName));
+    } catch (error) {
+      console.error('Failed to load entities:', error);
+      // Set empty array on error
+      setAvailableEntities([]);
+    } finally {
+      setIsLoadingEntities(false);
+    }
+  };
+
+  // Load initial report when provided
+  useEffect(() => {
+    if (initialReport) {
+      loadReportToFlow(initialReport);
+    }
+  }, [initialReport, loadReportToFlow]);
+
+  // Auto-sync flow changes to JSON
+  useEffect(() => {
+    if (currentReport && (nodes.length > 0 || edges.length > 0)) {
+      syncFlowToJson();
+    }
+  }, [nodes, edges, currentReport, syncFlowToJson]);
 
   const onConnect: OnConnect = useCallback(
     (params: Connection) => {
@@ -107,21 +189,21 @@ export const FlowBuilder: React.FC = () => {
     );
   }, [setNodes]);
 
-  // Delete selected nodes and edges
-  const onDeleteNodes = useCallback(() => {
-    if (selectedNodeId) {
-      setNodes((nds) => nds.filter((node) => node.id !== selectedNodeId));
-      setEdges((eds) => eds.filter((edge) => 
-        edge.source !== selectedNodeId && edge.target !== selectedNodeId
-      ));
-      setSelectedNodeId(null);
-    }
-  }, [selectedNodeId, setNodes, setEdges]);
+  // Delete selected nodes and edges (currently handled by keyboard events)
+  // const onDeleteNodes = useCallback(() => {
+  //   if (selectedNodeId) {
+  //     setNodes((nds) => nds.filter((node) => node.id !== selectedNodeId));
+  //     setEdges((eds) => eds.filter((edge) => 
+  //       edge.source !== selectedNodeId && edge.target !== selectedNodeId
+  //     ));
+  //     setSelectedNodeId(null);
+  //   }
+  // }, [selectedNodeId, setNodes, setEdges]);
 
-  // Delete selected edges
-  const onDeleteEdges = useCallback((edgeIds: string[]) => {
-    setEdges((eds) => eds.filter((edge) => !edgeIds.includes(edge.id)));
-  }, [setEdges]);
+  // Delete selected edges (currently handled by keyboard events)
+  // const onDeleteEdges = useCallback((edgeIds: string[]) => {
+  //   setEdges((eds) => eds.filter((edge) => !edgeIds.includes(edge.id)));
+  // }, [setEdges]);
 
   // Handle keyboard events for deletion
   const onKeyDown = useCallback((event: KeyboardEvent) => {
@@ -177,39 +259,30 @@ export const FlowBuilder: React.FC = () => {
 
   const handleNew = useCallback(() => {
     if (nodes.length > 0 && window.confirm('Create a new flow? This will clear the current flow.')) {
-      setNodes([]);
-      setEdges([]);
-      setSelectedNodeId(null);
-      setPreviewData({ columns: [], rows: [] });
+      createNewReport();
+    } else if (nodes.length === 0) {
+      createNewReport();
     }
-  }, [nodes.length, setNodes, setEdges]);
+  }, [nodes.length, createNewReport]);
 
   const handleSave = useCallback(() => {
-    const flowGraph: FlowGraph = {
-      schemaVersion: '1.0',
-      nodes: nodes.map(node => ({
-        id: node.id,
-        type: node.type as any,
-        position: node.position,
-        data: node.data,
-      })),
-      edges: edges.map(edge => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-      })),
-    };
-    
-    const dataStr = JSON.stringify(flowGraph, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    
-    const exportFileDefaultName = 'flow-graph.json';
-    
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
-    linkElement.click();
-  }, [nodes, edges]);
+    if (!currentReport) {
+      // Create new report if none exists
+      const newReport = FlowToJsonConverter.flowToJson(nodes, edges, {
+        name: 'New Report',
+        primaryEntity: 'unknown'
+      });
+      ReportManager.saveReport(newReport);
+      setCurrentReport(newReport);
+      onReportSave?.(newReport);
+    } else {
+      // Update existing report
+      const updatedReport = FlowToJsonConverter.updateReportFromFlow(currentReport, nodes, edges);
+      ReportManager.saveReport(updatedReport);
+      setCurrentReport(updatedReport);
+      onReportSave?.(updatedReport);
+    }
+  }, [currentReport, nodes, edges, onReportSave]);
 
   const handleLoad = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -217,31 +290,43 @@ export const FlowBuilder: React.FC = () => {
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
-          const flowGraph: FlowGraph = JSON.parse(e.target?.result as string);
-          
-          const loadedNodes = flowGraph.nodes.map(node => ({
-            id: node.id,
-            type: node.type,
-            position: node.position,
-            data: node.data,
-          }));
-          
-          const loadedEdges = flowGraph.edges.map(edge => ({
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            type: 'smoothstep',
-          }));
-          
-          setNodes(loadedNodes);
-          setEdges(loadedEdges);
-        } catch (error) {
-          console.error('Error loading flow graph:', error);
+          // Try to load as report definition first
+          const reportDef: ReportDefinition = JSON.parse(e.target?.result as string);
+          if (reportDef.schemaVersion && reportDef.graph) {
+            loadReportToFlow(reportDef);
+            return;
+          }
+        } catch {
+          // Fall back to legacy flow graph format
+          try {
+            const flowGraph: FlowGraph = JSON.parse(e.target?.result as string);
+            
+            const loadedNodes = flowGraph.nodes.map(node => ({
+              id: node.id,
+              type: node.type,
+              position: node.position,
+              data: node.data,
+            }));
+            
+            const loadedEdges = flowGraph.edges.map(edge => ({
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+              type: 'smoothstep',
+            }));
+            
+            setNodes(loadedNodes);
+            setEdges(loadedEdges);
+            setCurrentReport(null); // Clear current report for legacy flows
+          } catch (error) {
+            console.error('Error loading flow graph:', error);
+            alert('Invalid file format. Please select a valid report or flow file.');
+          }
         }
       };
       reader.readAsText(file);
     }
-  }, [setNodes, setEdges]);
+  }, [setNodes, setEdges, loadReportToFlow]);
 
   const handlePreview = useCallback(() => {
     // Generate preview data based on current flow
@@ -421,6 +506,30 @@ export const FlowBuilder: React.FC = () => {
           onToggleTheme={() => setIsDarkMode(!isDarkMode)}
           isDarkMode={isDarkMode}
         />
+        
+        {/* Environment Info */}
+        {isLoadingEntities && (
+          <div style={{ 
+            padding: '8px 16px', 
+            background: 'var(--colorNeutralBackground2)', 
+            borderBottom: '1px solid var(--colorNeutralStroke2)',
+            fontSize: '12px',
+            color: 'var(--colorNeutralForeground2)'
+          }}>
+            Loading entities from {getEnvironmentInfo().type}...
+          </div>
+        )}
+        {!isLoadingEntities && availableEntities.length > 0 && (
+          <div style={{ 
+            padding: '8px 16px', 
+            background: 'var(--colorNeutralBackground2)', 
+            borderBottom: '1px solid var(--colorNeutralStroke2)',
+            fontSize: '12px',
+            color: 'var(--colorNeutralForeground2)'
+          }}>
+            Connected to {getEnvironmentInfo().type} • {availableEntities.length} entities available
+          </div>
+        )}
       </div>
 
       {/* Main Content */}
@@ -499,6 +608,8 @@ export const FlowBuilder: React.FC = () => {
             <PropertiesPanel
               node={selectedNode}
               onUpdate={handleNodeUpdate}
+              availableEntities={availableEntities}
+              isLoadingEntities={isLoadingEntities}
             />
           </div>
         )}
