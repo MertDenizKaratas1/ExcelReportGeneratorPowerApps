@@ -135,7 +135,6 @@ export class EnvironmentService {
         return {
           userId: context.getUserId(),
           userName: context.getUserName(),
-          orgId: context.getOrgId(),
           orgName: context.getOrgUniqueName(),
           lcid: context.getUserLcid()
         };
@@ -155,9 +154,7 @@ export class EnvironmentService {
       try {
         const context = xrm.Utility.getGlobalContext();
         return {
-          orgId: context.getOrgId(),
           orgName: context.getOrgUniqueName(),
-          orgDisplayName: context.getOrgDisplayName(),
           version: context.getVersion(),
           lcid: context.getOrgLcid()
         };
